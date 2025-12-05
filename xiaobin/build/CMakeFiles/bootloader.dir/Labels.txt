@@ -1,0 +1,13 @@
+# Target labels
+ bootloader
+# Source files and their labels
+E:/hw/esp/xiaobin/build/CMakeFiles/bootloader
+E:/hw/esp/xiaobin/build/CMakeFiles/bootloader.rule
+E:/hw/esp/xiaobin/build/CMakeFiles/bootloader-complete.rule
+E:/hw/esp/xiaobin/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule
+E:/hw/esp/xiaobin/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule
+E:/hw/esp/xiaobin/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule
+E:/hw/esp/xiaobin/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule
+E:/hw/esp/xiaobin/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule
+E:/hw/esp/xiaobin/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule
+E:/hw/esp/xiaobin/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule
