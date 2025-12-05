@@ -85,6 +85,8 @@ static char *generate_bce_signature(const char *method, const char *uri, const c
              "%s\n%s\n\nhost:%s\nx-bce-date:%s\n", 
              method, uri, host, encoded_timestamp);
 
+    ESP_LOGI(TAG, "Canonical Request:\n%s", canonical_request);
+
     // 4. Signature
     // HMAC-SHA256(SigningKey, CanonicalRequest)
     unsigned char signature[32];
