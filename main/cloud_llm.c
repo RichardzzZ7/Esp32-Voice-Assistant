@@ -13,97 +13,8 @@
 
 static const char *TAG = "cloud_llm";
 
-// IAM Access Key for Qianfan LLM
-#define QIANFAN_ACCESS_KEY "ALTAK-qV035uKpslFPqXnfHWzFd"
-#define QIANFAN_SECRET_KEY "8017c9c36f6a9555e4b9b6f4b0898b787c71c7a9"
-
-// Helper for HMAC-SHA256
-static void hmac_sha256(const char *key, size_t key_len, const char *data, size_t data_len, unsigned char *output) {
-    mbedtls_md_context_t ctx;
-    mbedtls_md_type_t md_type = MBEDTLS_MD_SHA256;
-
-    mbedtls_md_init(&ctx);
-    mbedtls_md_setup(&ctx, mbedtls_md_info_from_type(md_type), 1);
-    mbedtls_md_hmac_starts(&ctx, (const unsigned char *)key, key_len);
-    mbedtls_md_hmac_update(&ctx, (const unsigned char *)data, data_len);
-    mbedtls_md_hmac_finish(&ctx, output);
-    mbedtls_md_free(&ctx);
-}
-
-// Hex encode helper
-static void hex_encode(const unsigned char *input, size_t len, char *output) {
-    for (size_t i = 0; i < len; i++) {
-        sprintf(output + (i * 2), "%02x", input[i]);
-    }
-    output[len * 2] = 0;
-}
-
-// Simple URL Encode for timestamp (only encodes :)
-static void url_encode_timestamp(const char *input, char *output) {
-    while (*input) {
-        if (*input == ':') {
-            strcpy(output, "%3A");
-            output += 3;
-        } else {
-            *output = *input;
-            output++;
-        }
-        input++;
-    }
-    *output = 0;
-}
-
-// Generate BCE IAM Signature
-// Returns malloc'd string for Authorization header
-static char *generate_bce_signature(const char *method, const char *uri, const char *host, const char *timestamp) {
-    // 1. Auth String Prefix
-    // bce-auth-v1/{accessKeyId}/{timestamp}/{expirationPeriodInSeconds}
-    char auth_prefix[128];
-    snprintf(auth_prefix, sizeof(auth_prefix), "bce-auth-v1/%s/%s/1800", QIANFAN_ACCESS_KEY, timestamp);
-
-    // 2. Signing Key
-    // HMAC-SHA256(SecretAccessKey, AuthStringPrefix)
-    unsigned char signing_key[32];
-    hmac_sha256(QIANFAN_SECRET_KEY, strlen(QIANFAN_SECRET_KEY), auth_prefix, strlen(auth_prefix), signing_key);
-    
-    char signing_key_hex[65];
-    hex_encode(signing_key, 32, signing_key_hex);
-
-    // 3. Canonical Request
-    // Method + \n + URI + \n + Query + \n + Headers
-    
-    // Encode timestamp for the canonical header value
-    char encoded_timestamp[64];
-    url_encode_timestamp(timestamp, encoded_timestamp);
-
-    // Headers must be sorted: host, x-bce-date
-    // Format: header_name:header_value\n...
-    // Values must be URL encoded if they contain special chars (like :)
-    // Note: CanonicalHeaders must end with a newline
-    char canonical_request[512];
-    snprintf(canonical_request, sizeof(canonical_request), 
-             "%s\n%s\n\nhost:%s\nx-bce-date:%s\n", 
-             method, uri, host, encoded_timestamp);
-
-    ESP_LOGI(TAG, "Canonical Request:\n%s", canonical_request);
-
-    // 4. Signature
-    // HMAC-SHA256(SigningKey, CanonicalRequest)
-    unsigned char signature[32];
-    // Use raw signing_key bytes, not hex string
-    hmac_sha256((const char *)signing_key, 32, canonical_request, strlen(canonical_request), signature);
-    
-    char signature_hex[65];
-    hex_encode(signature, 32, signature_hex);
-
-    // 5. Final Header
-    // bce-auth-v1/{accessKeyId}/{timestamp}/{expirationPeriodInSeconds}/{signedHeaders}/{signature}
-    char *auth_header = malloc(512);
-    if (auth_header) {
-        snprintf(auth_header, 512, "%s/host;x-bce-date/%s", auth_prefix, signature_hex);
-    }
-    return auth_header;
-}
+// IAM Bearer Token for Qianfan LLM (V2 API)
+#define QIANFAN_BEARER_TOKEN "bce-v3/ALTAK-qV035uKpslFPqXnfHWzFd/8017c9c36f6a9555e4b9b6f4b0898b787c71c7a9"
 
 // Helper to parse LLM response
 static void process_llm_response(const char *json_str, llm_action_t action)
@@ -262,26 +173,8 @@ bool cloud_llm_parse_inventory(const char *text, llm_action_t action)
     bool success = false;
     ESP_LOGI(TAG, "Requesting Cloud LLM parsing for: %s (Action: %d)", text, action);
 
-    // Use Baidu ERNIE-Speed-128K with IAM Auth
-    const char *host = "aip.baidubce.com";
-    const char *uri = "/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/ernie-speed-128k";
-    char url[256];
-    snprintf(url, sizeof(url), "https://%s%s", host, uri);
-
-    // Prepare Timestamp for Signature
-    time_t now = time(NULL);
-    struct tm timeinfo = {0};
-    gmtime_r(&now, &timeinfo); // UTC time
-    char timestamp[32];
-    strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", &timeinfo);
-
-    // Generate Signature
-    char *auth_header = generate_bce_signature("POST", uri, host, timestamp);
-    if (!auth_header) {
-        ESP_LOGE(TAG, "Failed to generate signature");
-        return false;
-    }
-    ESP_LOGI(TAG, "Auth Header: %s", auth_header);
+    // Use Baidu Qianfan V2 API with Bearer Token
+    const char *url = "https://qianfan.baidubce.com/v2/chat/completions";
 
     esp_http_client_config_t config = {
         .url = url,
@@ -296,14 +189,17 @@ bool cloud_llm_parse_inventory(const char *text, llm_action_t action)
     
     // Set Headers
     esp_http_client_set_header(client, "Content-Type", "application/json");
-    esp_http_client_set_header(client, "Host", host);
-    esp_http_client_set_header(client, "x-bce-date", timestamp);
+    
+    char auth_header[256];
+    snprintf(auth_header, sizeof(auth_header), "Bearer %s", QIANFAN_BEARER_TOKEN);
     esp_http_client_set_header(client, "Authorization", auth_header);
     
     // Build JSON Body for Baidu
     cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "model", "ernie-speed-128k");
     
     // Dynamic Date for Prompt (Local Time)
+    time_t now = time(NULL);
     struct tm local_timeinfo = {0};
     localtime_r(&now, &local_timeinfo);
     char date_str[20];
@@ -374,7 +270,6 @@ bool cloud_llm_parse_inventory(const char *text, llm_action_t action)
     // Cleanup
     cJSON_Delete(root);
     free(post_data);
-    free(auth_header); // Free signature
     esp_http_client_cleanup(client);
     
     return success;

@@ -231,3 +231,11 @@ const char *cloud_asr_get_token(void)
     }
     return g_access_token;
 }
+
+// Helper for cloud_llm.c to get the token
+char *get_baidu_access_token(void) {
+    if (!g_access_token) {
+        get_access_token();
+    }
+    return g_access_token;
+}
