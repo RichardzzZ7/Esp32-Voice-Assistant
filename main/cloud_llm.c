@@ -58,6 +58,7 @@ static void process_llm_response(const char *json_str, llm_action_t action)
                      cJSON *cat = cJSON_GetObjectItem(item_json, "category");
                      cJSON *unit = cJSON_GetObjectItem(item_json, "unit");
                      cJSON *loc = cJSON_GetObjectItem(item_json, "location");
+                     cJSON *notes = cJSON_GetObjectItem(item_json, "notes");
                      cJSON *exp = cJSON_GetObjectItem(item_json, "expiry_date");
                      cJSON *shelf = cJSON_GetObjectItem(item_json, "shelf_life_days");
 
@@ -66,6 +67,7 @@ static void process_llm_response(const char *json_str, llm_action_t action)
                      if (qty) item.quantity = qty->valueint;
                      if (unit && unit->valuestring) strncpy(item.unit, unit->valuestring, sizeof(item.unit)-1);
                      if (loc && loc->valuestring) strncpy(item.location, loc->valuestring, sizeof(item.location)-1);
+                     if (notes && notes->valuestring) strncpy(item.notes, notes->valuestring, sizeof(item.notes)-1);
                      
                      // Handle expiry date parsing (YYYY-MM-DD)
                      if (exp && exp->valuestring) {
@@ -124,17 +126,19 @@ static void process_llm_response(const char *json_str, llm_action_t action)
                     } else {
                         // ADD
                         inventory_item_t item;
-                        memset(&item, 0, sizeof(item));
-                        
                         cJSON *cat = cJSON_GetObjectItem(item_json, "category");
                         cJSON *unit = cJSON_GetObjectItem(item_json, "unit");
                         cJSON *loc = cJSON_GetObjectItem(item_json, "location");
+                        cJSON *notes = cJSON_GetObjectItem(item_json, "notes");
                         cJSON *exp = cJSON_GetObjectItem(item_json, "expiry_date");
                         cJSON *shelf = cJSON_GetObjectItem(item_json, "shelf_life_days");
 
                         if (name && name->valuestring) strncpy(item.name, name->valuestring, sizeof(item.name)-1);
                         if (cat && cat->valuestring) strncpy(item.category, cat->valuestring, sizeof(item.category)-1);
                         if (qty) item.quantity = qty->valueint;
+                        if (unit && unit->valuestring) strncpy(item.unit, unit->valuestring, sizeof(item.unit)-1);
+                        if (loc && loc->valuestring) strncpy(item.location, loc->valuestring, sizeof(item.location)-1);
+                        if (notes && notes->valuestring) strncpy(item.notes, notes->valuestring, sizeof(item.notes)-1);
                         if (unit && unit->valuestring) strncpy(item.unit, unit->valuestring, sizeof(item.unit)-1);
                         if (loc && loc->valuestring) strncpy(item.location, loc->valuestring, sizeof(item.location)-1);
                         
@@ -215,22 +219,32 @@ bool cloud_llm_parse_inventory(const char *text, llm_action_t action)
              "You are an inventory assistant. User wants to REMOVE items. Extract: name, quantity. Return ONLY JSON. Example: {\"name\":\"apple\",\"quantity\":2}");
     } else {
         snprintf(system_prompt, sizeof(system_prompt), 
-             "You are an inventory assistant. Extract: name, category, quantity, unit, expiry_date (YYYY-MM-DD), shelf_life_days (int), location. Today is %s. Return ONLY JSON. Example: {\"name\":\"milk\",\"quantity\":1,\"unit\":\"box\",\"expiry_date\":\"2025-12-01\"}", 
+             "You are an inventory assistant. Extract: name, category, quantity, unit, expiry_date (YYYY-MM-DD), shelf_life_days (int), location, notes. Today is %s. Return ONLY JSON. Example: {\"name\":\"milk\",\"quantity\":1,\"unit\":\"box\",\"expiry_date\":\"2025-12-01\",\"notes\":\"organic\"}", 
              date_str);
     }
 
     // Baidu uses "messages" array just like OpenAI
     cJSON *messages = cJSON_CreateArray();
     
-    // Note: Baidu ERNIE sometimes prefers system prompt in "system" field (newer API) or just as first user message.
-    // Let's try the standard "system" role if supported, or prepend to user.
-    // ERNIE-Speed supports "system" field in root, NOT in messages array usually.
-    cJSON_AddStringToObject(root, "system", system_prompt);
-
-    cJSON *msg_user = cJSON_CreateObject();
-    cJSON_AddStringToObject(msg_user, "role", "user");
-    cJSON_AddStringToObject(msg_user, "content", text);
-    cJSON_AddItemToArray(messages, msg_user);
+    // Combine system prompt and user text into a single user message to ensure it is respected
+    // Some Baidu models/endpoints ignore the 'system' field or separate system messages.
+    char *combined_content = malloc(strlen(system_prompt) + strlen(text) + 50);
+    if (combined_content) {
+        sprintf(combined_content, "%s\n\nUser Input: %s", system_prompt, text);
+        
+        cJSON *msg_user = cJSON_CreateObject();
+        cJSON_AddStringToObject(msg_user, "role", "user");
+        cJSON_AddStringToObject(msg_user, "content", combined_content);
+        cJSON_AddItemToArray(messages, msg_user);
+        
+        free(combined_content);
+    } else {
+        // Fallback if malloc fails
+        cJSON *msg_user = cJSON_CreateObject();
+        cJSON_AddStringToObject(msg_user, "role", "user");
+        cJSON_AddStringToObject(msg_user, "content", text);
+        cJSON_AddItemToArray(messages, msg_user);
+    }
     
     cJSON_AddItemToObject(root, "messages", messages);
     
