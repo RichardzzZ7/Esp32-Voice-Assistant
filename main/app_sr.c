@@ -244,13 +244,24 @@ void detect_Task(void *arg)
                         break;
                     case 11: // xian shi ku cun
                         printf("Showing Inventory...\n");
+                        inventory_print_all();
                         ui_inventory_refresh();
-                        break;
+                        // Reset state to idle
+                        afe_handle->enable_wakenet(afe_data);
+                        detect_flag = 0;
+                        ai_gui_out();
+                        printf("\n-----------awaits to be waken up-----------\n");
+                        continue;
                     case 12: // qing kong
                         printf("Clearing Inventory...\n");
                         inventory_clear_all();
                         ui_inventory_refresh();
-                        break;
+                        // Reset state to idle
+                        afe_handle->enable_wakenet(afe_data);
+                        detect_flag = 0;
+                        ai_gui_out();
+                        printf("\n-----------awaits to be waken up-----------\n");
+                        continue;
 
                     default:
                         break;
