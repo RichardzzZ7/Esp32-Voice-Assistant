@@ -9,7 +9,7 @@
 #include <stdio.h>
 
 static const char *TAG = "notify";
-static int g_check_interval = 60; // seconds
+static int g_check_interval = 43200; // seconds
 static int g_threshold_days = 3;
 
 static void notify_task(void *arg)
@@ -19,9 +19,7 @@ static void notify_task(void *arg)
         inventory_item_t **items = NULL;
         int count = inventory_list_items(&items);
         if (count > 0 && items) {
-            // collect near-expiry items
-            inventory_item_t **near = calloc(count + 1, sizeof(inventory_item_t*));
-            int ni = 0;
+            // only do expiry notifications; do NOT trigger recipe suggestions here
             for (int i = 0; i < count; ++i) {
                 inventory_item_t *it = items[i];
                 if (!it) continue;
@@ -34,17 +32,7 @@ static void notify_task(void *arg)
                         inventory_mark_notified(it, it->remaining_days);
                         ui_inventory_refresh();
                     }
-                    near[ni++] = it;
                 }
-            }
-            near[ni] = NULL;
-            // if there's 2 or more near-expiry items, request recipe suggestions
-            if (ni >= 2) {
-                // call recipe recommendation (non-blocking)
-                extern void recipe_request_for_items(inventory_item_t **items, int count);
-                recipe_request_for_items(near, ni);
-            } else {
-                free(near);
             }
         }
         if (items) inventory_free_list(items);

@@ -25,8 +25,8 @@ void app_main(void)
 
     // 初始化 TTS 与提醒
     tts_init();
-    // check every 60s, threshold 3 days (adjustable)
-    notify_init(60, 3);
+    // check every 43200s (12 hours), threshold 3 days (adjustable)
+    notify_init(43200, 3);
 
     // Start Wi-Fi (edit wifi_config.h to set SSID/PASSWORD)
     if (!wifi_init_sta()) {
