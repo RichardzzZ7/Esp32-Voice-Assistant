@@ -42,6 +42,14 @@ static esp_afe_sr_data_t *afe_data = NULL;
 int detect_flag = 0;
 static volatile int task_flag = 0;
 
+// Background task to run cloud recipe recommendation without blocking AFE/multinet loop
+static void llm_recipe_task(void *arg)
+{
+    (void)arg;
+    cloud_llm_recommend_recipes();
+    vTaskDelete(NULL);
+}
+
 void process_audio_task(void *arg) {
     while(1) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -238,7 +246,9 @@ void detect_Task(void *arg)
 
                     case 6: // cai pu tui jian
                         printf("Recommending Recipes...\n");
-                        cloud_llm_recommend_recipes();
+                        // Run recipe recommendation in background to avoid blocking
+                        // the AFE/multinet detection loop and causing rb_out slow.
+                        xTaskCreatePinnedToCore(llm_recipe_task, "llm_recipe", 8*1024, NULL, 5, NULL, 1);
                         // Reset state to idle
                         afe_handle->enable_wakenet(afe_data);
                         detect_flag = 0;
@@ -254,11 +264,11 @@ void detect_Task(void *arg)
 
             if (mn_state == ESP_MN_STATE_TIMEOUT) { // 达到最大检测命令词时间
                 esp_mn_results_t *mn_result = multinet->get_results(model_data);
-                printf("timeout, string:%s\n", mn_result->string);
-                // 交给本地库存解析模块做槽位抽取与入库
+                // 超时但未匹配到有效命令词的语音内容直接丢弃，不再用于入库
                 if (mn_result && mn_result->string[0] != '\0') {
-                    inventory_add_item_from_text(mn_result->string);
-                    ui_inventory_refresh();
+                    printf("timeout, discard string:%s\n", mn_result->string);
+                } else {
+                    printf("timeout, no valid command detected\n");
                 }
                 afe_handle->enable_wakenet(afe_data);  // 重新打开唤醒词识别
                 detect_flag = 0; // 清除标记
