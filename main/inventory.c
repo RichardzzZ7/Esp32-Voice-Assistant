@@ -15,6 +15,10 @@ static const char *TAG = "inventory";
 static inventory_item_t *g_head = NULL;
 static const char *INV_PATH = "/spiffs/inventory.json";
 
+// Maximum days we consider as a reasonable shelf life to
+// avoid absurd values from cloud parsing (e.g., year 3000).
+#define MAX_SHELF_LIFE_DAYS 365
+
 // Simple id generator (timestamp + counter)
 static int s_id_counter = 0;
 const char *inventory_generate_id(void)
@@ -24,7 +28,6 @@ const char *inventory_generate_id(void)
     s_id_counter = (s_id_counter + 1) & 0xFFFF;
     // Use standard long for portability and safety, assuming time_t fits in long or we just use lower bits
     snprintf(buf, sizeof(buf), "%ld_%04x", (long)now, s_id_counter);
-    ESP_LOGI(TAG, "Generated ID: %s", buf);
     return buf;
 }
 
@@ -60,8 +63,20 @@ int inventory_compute_expiry(inventory_item_t *item)
     }
 
     time_t now = time(NULL);
-    int days = (int)((item->calculated_expiry_date - now) / (24*3600));
+    struct tm *expiry_tm = gmtime(&item->calculated_expiry_date);
+    struct tm *now_tm = gmtime(&now);
+    struct tm expiry_date = *expiry_tm;
+    struct tm now_date = *now_tm;
+    expiry_date.tm_hour = expiry_date.tm_min = expiry_date.tm_sec = 0;
+    now_date.tm_hour = now_date.tm_min = now_date.tm_sec = 0;
+
+    time_t expiry_time = mktime(&expiry_date);
+    time_t now_time = mktime(&now_date);
+    int days = (int)((expiry_time - now_time) / (24*3600));
     if (days < 0) days = 0;
+    if (days > MAX_SHELF_LIFE_DAYS) {
+        days = MAX_SHELF_LIFE_DAYS;
+    }
     item->remaining_days = days;
     return item->remaining_days;
 }
@@ -87,7 +102,7 @@ int inventory_add_item(const inventory_item_t *item)
     inventory_compute_expiry(n);
     n->next = g_head;
     g_head = n;
-    ESP_LOGI(TAG, "Added item: %s id:%s qty:%d loc:%s remaining:%d", n->name, n->item_id, n->quantity, n->location, n->remaining_days);
+    ESP_LOGI(TAG, "Added item: %s qty:%d loc:%s remaining:%d", n->name, n->quantity, n->location, n->remaining_days);
     inventory_save();
     // enqueue sync event
     cJSON *ev = cJSON_CreateObject();
@@ -184,7 +199,7 @@ void inventory_print_all(void)
 {
     inventory_item_t *it = g_head;
     while (it) {
-        ESP_LOGI(TAG, "Item: %s id:%s qty:%d %s loc:%s added:%lld expiry:%lld remaining:%d days", it->name, it->item_id, it->quantity, it->unit, it->location, (long long)it->added_time, (long long)it->calculated_expiry_date, it->remaining_days);
+        ESP_LOGI(TAG, "Item: %s qty:%d %s loc:%s added:%lld expiry:%lld remaining:%d days", it->name, it->quantity, it->unit, it->location, (long long)it->added_time, (long long)it->calculated_expiry_date, it->remaining_days);
         it = it->next;
     }
 }
