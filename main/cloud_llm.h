@@ -16,4 +16,7 @@ void cloud_llm_init(void);
 // Returns true if successful
 bool cloud_llm_parse_inventory(const char *text, llm_action_t action);
 
+// Recommend recipes based on current inventory
+bool cloud_llm_recommend_recipes(void);
+
 #endif // _CLOUD_LLM_H_

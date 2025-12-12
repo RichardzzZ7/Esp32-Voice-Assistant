@@ -2,11 +2,13 @@
 #include "audio_player.h"
 #include "esp32_s3_szp.h"
 #include "file_iterator.h"
-#include "string.h"
-#include <dirent.h>
+#include "esp_netif_sntp.h"
+#include "esp_sntp.h"
 #include "ui_inventory.h"
 
 static const char *TAG = "app_ui";
+
+LV_FONT_DECLARE(font_alipuhui20);
 
 static audio_player_config_t player_config = {0};
 static uint8_t g_sys_volume = VOLUME_DEFAULT;
@@ -364,14 +366,14 @@ void music_ui(void)
     lv_obj_t *lab_title = lv_label_create(lv_scr_act());
     lv_obj_set_user_data(lab_title, (void *) btn_play_pause);
     lv_label_set_text_static(lab_title, "Scanning Files...");
-    lv_obj_set_style_text_font(lab_title, &lv_font_montserrat_32, LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(lab_title, &font_alipuhui20, LV_STATE_DEFAULT);
     lv_obj_align(lab_title, LV_ALIGN_TOP_MID, 0, 20);
 
     /* 创建音乐列表 */ 
     music_list = lv_dropdown_create(lv_scr_act());
     lv_dropdown_clear_options(music_list);
     lv_dropdown_set_options_static(music_list, "Scanning...");
-    lv_obj_set_style_text_font(music_list, &lv_font_montserrat_20, LV_STATE_ANY);
+    lv_obj_set_style_text_font(music_list, &font_alipuhui20, LV_STATE_ANY);
     lv_obj_set_width(music_list, 200);
     lv_obj_align_to(music_list, lab_title, LV_ALIGN_OUT_BOTTOM_MID, 0, 20);
     lv_obj_set_user_data(music_list, (void *) lab_title);

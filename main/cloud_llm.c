@@ -288,3 +288,118 @@ bool cloud_llm_parse_inventory(const char *text, llm_action_t action)
     
     return success;
 }
+
+bool cloud_llm_recommend_recipes(void)
+{
+    ESP_LOGI(TAG, "Requesting Recipe Recommendation...");
+
+    // 1. Get Inventory
+    inventory_item_t **items = NULL;
+    int count = inventory_list_items(&items);
+    if (count <= 0) {
+        ESP_LOGW(TAG, "Inventory is empty, cannot recommend recipes.");
+        printf("Inventory is empty. Please add items first.\n");
+        return false;
+    }
+
+    // 2. Build Inventory String
+    char *inv_str = malloc(2048);
+    if (!inv_str) {
+        inventory_free_list(items);
+        return false;
+    }
+    strcpy(inv_str, "Current Inventory: ");
+    for (int i = 0; i < count; i++) {
+        char item_buf[128];
+        snprintf(item_buf, sizeof(item_buf), "%s (%d %s), ", items[i]->name, items[i]->quantity, items[i]->unit);
+        if (strlen(inv_str) + strlen(item_buf) < 2047) {
+            strcat(inv_str, item_buf);
+        }
+    }
+    inventory_free_list(items);
+
+    // 3. Prepare LLM Request
+    const char *url = "https://qianfan.baidubce.com/v2/chat/completions";
+    esp_http_client_config_t config = {
+        .url = url,
+        .method = HTTP_METHOD_POST,
+        .timeout_ms = 60000, // Longer timeout for recipe generation
+        .buffer_size = 8192,
+        .buffer_size_tx = 4096,
+        .crt_bundle_attach = esp_crt_bundle_attach,
+    };
+    
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    esp_http_client_set_header(client, "Content-Type", "application/json");
+    char auth_header[256];
+    snprintf(auth_header, sizeof(auth_header), "Bearer %s", QIANFAN_BEARER_TOKEN);
+    esp_http_client_set_header(client, "Authorization", auth_header);
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "model", "ernie-speed-128k");
+    
+    char system_prompt[] = "You are a professional chef. Based on the provided inventory ingredients, recommend 1-2 detailed recipes. Format the output clearly.";
+    
+    cJSON *messages = cJSON_CreateArray();
+    char *combined_content = malloc(strlen(system_prompt) + strlen(inv_str) + 50);
+    if (combined_content) {
+        sprintf(combined_content, "%s\n\n%s", system_prompt, inv_str);
+        cJSON *msg_user = cJSON_CreateObject();
+        cJSON_AddStringToObject(msg_user, "role", "user");
+        cJSON_AddStringToObject(msg_user, "content", combined_content);
+        cJSON_AddItemToArray(messages, msg_user);
+        free(combined_content);
+    }
+    cJSON_AddItemToObject(root, "messages", messages);
+    free(inv_str);
+
+    char *post_data = cJSON_PrintUnformatted(root);
+    esp_http_client_set_post_field(client, post_data, strlen(post_data));
+
+    // 4. Execute
+    bool success = false;
+    esp_err_t err = esp_http_client_open(client, strlen(post_data));
+    if (err == ESP_OK) {
+        esp_http_client_write(client, post_data, strlen(post_data));
+        if (esp_http_client_fetch_headers(client) >= 0) {
+            char *buffer = malloc(8192); // Larger buffer for recipe
+            if (buffer) {
+                int read_len = esp_http_client_read_response(client, buffer, 8192);
+                if (read_len >= 0) {
+                    buffer[read_len] = 0;
+                    // ESP_LOGI(TAG, "Recipe Response: %s", buffer);
+                    
+                    // Parse and print content
+                    cJSON *resp = cJSON_Parse(buffer);
+                    if (resp) {
+                        cJSON *result = cJSON_GetObjectItem(resp, "result");
+                        if (result && result->valuestring) {
+                             printf("\n=== Recipe Recommendation ===\n%s\n=============================\n", result->valuestring);
+                        } else {
+                            // Try OpenAI format
+                            cJSON *choices = cJSON_GetObjectItem(resp, "choices");
+                            if (choices && cJSON_IsArray(choices)) {
+                                cJSON *first = cJSON_GetArrayItem(choices, 0);
+                                cJSON *msg = cJSON_GetObjectItem(first, "message");
+                                cJSON *content = cJSON_GetObjectItem(msg, "content");
+                                if (content && content->valuestring) {
+                                    printf("\n=== Recipe Recommendation ===\n%s\n=============================\n", content->valuestring);
+                                }
+                            }
+                        }
+                        cJSON_Delete(resp);
+                    }
+                    success = true;
+                }
+                free(buffer);
+            }
+        }
+    } else {
+        ESP_LOGE(TAG, "HTTP Failed: %s", esp_err_to_name(err));
+    }
+
+    cJSON_Delete(root);
+    free(post_data);
+    esp_http_client_cleanup(client);
+    return success;
+}

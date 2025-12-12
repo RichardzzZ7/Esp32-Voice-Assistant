@@ -95,18 +95,12 @@ void detect_Task(void *arg)
     esp_mn_iface_t *multinet = esp_mn_handle_from_name(mn_name);
     model_iface_data_t *model_data = multinet->create(mn_name, 6000);  // 设置唤醒后等待事件 6000代表6000毫秒
     esp_mn_commands_clear(); // 清除当前的命令词列表
-    esp_mn_commands_add(1, "bo fang yin yue"); // 播放音乐
-    esp_mn_commands_add(2, "zan ting"); // 暂停
-    esp_mn_commands_add(3, "ji xu"); // 继续
-    esp_mn_commands_add(4, "shang yi shou"); // 上一首
-    esp_mn_commands_add(5, "xia yi shou"); // 下一首
-    esp_mn_commands_add(6, "sheng yin da yi dian"); // 声音大一点
-    esp_mn_commands_add(7, "sheng yin xiao yi dian"); // 声音小一点
-    esp_mn_commands_add(8, "ce shi yun duan"); // 测试云端 (Test Cloud)
-    esp_mn_commands_add(9, "fang ru"); // 放入 (Trigger for demo)
-    esp_mn_commands_add(10, "na chu"); // 拿出
-    esp_mn_commands_add(11, "xian shi ku cun"); // 显示库存
-    esp_mn_commands_add(12, "qing kong"); // 清空
+    esp_mn_commands_add(1, "ce shi yun duan"); // 测试云端 (Test Cloud)
+    esp_mn_commands_add(2, "fang ru"); // 放入 (Trigger for demo)
+    esp_mn_commands_add(3, "na chu"); // 拿出
+    esp_mn_commands_add(4, "xian shi ku cun"); // 显示库存
+    esp_mn_commands_add(5, "qing kong"); // 清空
+    esp_mn_commands_add(6, "cai pu tui jian"); // 菜谱推荐
     esp_mn_commands_update(); // 更新命令词
     int mu_chunksize = multinet->get_samp_chunksize(model_data);  // 获取samp帧长度
     assert(mu_chunksize == afe_chunksize);
@@ -183,28 +177,7 @@ void detect_Task(void *arg)
                 // 根据命令词 执行相应动作
                 switch (mn_result->command_id[0])
                 {
-                    case 1: // bo fang yin yue 播放音乐
-                        ai_play();
-                        break;
-                    case 2: // zan ting 暂停
-                        ai_pause();
-                        break;
-                    case 3: // ji xu 继续
-                        ai_resume();
-                        break;
-                    case 4: // shang yi shou 上一首
-                        ai_prev_music();
-                        break;
-                    case 5: // xia yi shou 下一首
-                        ai_next_music();
-                        break;
-                    case 6: // sheng yin da yi dian 声音大一点
-                        ai_volume_up();
-                        break;
-                    case 7: // sheng yin xiao yi dian 声音小一点
-                        ai_volume_down();
-                        break;
-                    case 8: // ce shi yun duan
+                    case 1: // ce shi yun duan
                         printf("Starting Voice Recording for Cloud ASR...\n");
                         // Allocate buffer
                         g_record_buffer = heap_caps_malloc(RECORD_BUFFER_SIZE, MALLOC_CAP_SPIRAM);
@@ -216,7 +189,7 @@ void detect_Task(void *arg)
                             printf("Failed to allocate record buffer!\n");
                         }
                         break;
-                    case 9: // fang ru
+                    case 2: // fang ru
                         printf("Starting Voice Recording for Cloud ASR (ADD)...\n");
                         g_current_action = LLM_ACTION_ADD;
                         // Allocate buffer
@@ -229,7 +202,7 @@ void detect_Task(void *arg)
                             printf("Failed to allocate record buffer!\n");
                         }
                         break;
-                    case 10: // na chu
+                    case 3: // na chu
                         printf("Starting Voice Recording for Cloud ASR (REMOVE)...\n");
                         g_current_action = LLM_ACTION_REMOVE;
                         // Allocate buffer
@@ -242,7 +215,7 @@ void detect_Task(void *arg)
                             printf("Failed to allocate record buffer!\n");
                         }
                         break;
-                    case 11: // xian shi ku cun
+                    case 4: // xian shi ku cun
                         printf("Showing Inventory...\n");
                         inventory_print_all();
                         ui_inventory_refresh();
@@ -252,10 +225,20 @@ void detect_Task(void *arg)
                         ai_gui_out();
                         printf("\n-----------awaits to be waken up-----------\n");
                         continue;
-                    case 12: // qing kong
+                    case 5: // qing kong
                         printf("Clearing Inventory...\n");
                         inventory_clear_all();
                         ui_inventory_refresh();
+                        // Reset state to idle
+                        afe_handle->enable_wakenet(afe_data);
+                        detect_flag = 0;
+                        ai_gui_out();
+                        printf("\n-----------awaits to be waken up-----------\n");
+                        continue;
+
+                    case 6: // cai pu tui jian
+                        printf("Recommending Recipes...\n");
+                        cloud_llm_recommend_recipes();
                         // Reset state to idle
                         afe_handle->enable_wakenet(afe_data);
                         detect_flag = 0;

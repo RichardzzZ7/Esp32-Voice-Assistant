@@ -9,6 +9,8 @@
 
 static const char *TAG = "ui_inv";
 
+LV_FONT_DECLARE(font_alipuhui20);
+
 // initialize inventory UI (register pages/buttons as needed)
 void ui_inventory_init(void)
 {
@@ -96,7 +98,7 @@ void ui_inventory_show(void)
         snprintf(buf, sizeof(buf), "%s  %d%s  %s", it->name, it->remaining_days, "天", it->location);
         lv_obj_t *label = lv_label_create(inv_list);
         lv_label_set_text(label, buf);
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_20, LV_STATE_DEFAULT);
+        lv_obj_set_style_text_font(label, &font_alipuhui20, LV_STATE_DEFAULT);
         lv_obj_align(label, LV_ALIGN_TOP_LEFT, 10, 10 + y*28);
         // highlight if near expiry
         if (it->remaining_days <= g_notify_threshold_days) {

@@ -20,9 +20,11 @@ static int s_id_counter = 0;
 const char *inventory_generate_id(void)
 {
     static char buf[32];
-    long long t = (long long)time(NULL);
+    time_t now = time(NULL);
     s_id_counter = (s_id_counter + 1) & 0xFFFF;
-    snprintf(buf, sizeof(buf), "%lld_%04x", t, s_id_counter);
+    // Use standard long for portability and safety, assuming time_t fits in long or we just use lower bits
+    snprintf(buf, sizeof(buf), "%ld_%04x", (long)now, s_id_counter);
+    ESP_LOGI(TAG, "Generated ID: %s", buf);
     return buf;
 }
 
@@ -43,10 +45,20 @@ int inventory_compute_expiry(inventory_item_t *item)
 {
     if (!item) return -1;
     if (item->added_time == 0) item->added_time = time(NULL);
-    if (item->default_shelf_life_days <= 0) {
-        item->default_shelf_life_days = category_default_days(item->category);
+    
+    // If calculated_expiry_date is already set (e.g. from LLM), use it to reverse-calc shelf life if needed
+    if (item->calculated_expiry_date > 0) {
+        if (item->default_shelf_life_days <= 0) {
+             item->default_shelf_life_days = (int)((item->calculated_expiry_date - item->added_time) / (24*3600));
+        }
+    } else {
+        // Otherwise calculate from shelf life
+        if (item->default_shelf_life_days <= 0) {
+            item->default_shelf_life_days = category_default_days(item->category);
+        }
+        item->calculated_expiry_date = item->added_time + (int64_t)item->default_shelf_life_days * 24 * 3600;
     }
-    item->calculated_expiry_date = item->added_time + (int64_t)item->default_shelf_life_days * 24 * 3600;
+
     time_t now = time(NULL);
     int days = (int)((item->calculated_expiry_date - now) / (24*3600));
     if (days < 0) days = 0;
