@@ -69,20 +69,24 @@ static void process_llm_response(const char *json_str, llm_action_t action)
                      if (loc && loc->valuestring) strncpy(item.location, loc->valuestring, sizeof(item.location)-1);
                      if (notes && notes->valuestring) strncpy(item.notes, notes->valuestring, sizeof(item.notes)-1);
                      
-                     // Handle expiry date parsing (YYYY-MM-DD)
-                     if (exp && exp->valuestring) {
+                     // Use shelf_life_days when provided
+                     if (shelf && cJSON_IsNumber(shelf) && shelf->valueint > 0) {
+                         item.default_shelf_life_days = shelf->valueint;
+                     }
+
+                     // Handle expiry date parsing (YYYY-MM-DD) when it's a non-empty string
+                     if (exp && cJSON_IsString(exp) && exp->valuestring && exp->valuestring[0] != '\0') {
                          struct tm tmv = {0};
                          if (sscanf(exp->valuestring, "%d-%d-%d", &tmv.tm_year, &tmv.tm_mon, &tmv.tm_mday) == 3) {
                              tmv.tm_year -= 1900;
                              tmv.tm_mon -= 1;
                              item.calculated_expiry_date = mktime(&tmv);
-                             // Calculate remaining days
-                             time_t now = time(NULL);
-                             item.default_shelf_life_days = (item.calculated_expiry_date - now) / (24 * 3600);
                          }
-                     } else if (shelf && shelf->valueint > 0) {
-                         // Fallback: use shelf_life_days if expiry_date is missing
-                         item.default_shelf_life_days = shelf->valueint;
+                     }
+
+                     // If expiry_date is missing or parsing failed but we have shelf_life_days,
+                     // derive a reasonable expiry date from shelf_life_days.
+                     if (item.calculated_expiry_date == 0 && item.default_shelf_life_days > 0) {
                          item.calculated_expiry_date = time(NULL) + (int64_t)item.default_shelf_life_days * 24 * 3600;
                      }
 
@@ -126,6 +130,8 @@ static void process_llm_response(const char *json_str, llm_action_t action)
                     } else {
                         // ADD
                         inventory_item_t item;
+                        memset(&item, 0, sizeof(item));
+
                         cJSON *cat = cJSON_GetObjectItem(item_json, "category");
                         cJSON *unit = cJSON_GetObjectItem(item_json, "unit");
                         cJSON *loc = cJSON_GetObjectItem(item_json, "location");
@@ -139,21 +145,30 @@ static void process_llm_response(const char *json_str, llm_action_t action)
                         if (unit && unit->valuestring) strncpy(item.unit, unit->valuestring, sizeof(item.unit)-1);
                         if (loc && loc->valuestring) strncpy(item.location, loc->valuestring, sizeof(item.location)-1);
                         if (notes && notes->valuestring) strncpy(item.notes, notes->valuestring, sizeof(item.notes)-1);
-                        if (unit && unit->valuestring) strncpy(item.unit, unit->valuestring, sizeof(item.unit)-1);
-                        if (loc && loc->valuestring) strncpy(item.location, loc->valuestring, sizeof(item.location)-1);
                         
-                        // Handle expiry date parsing (YYYY-MM-DD)
-                        if (exp && exp->valuestring) {
-                            struct tm tmv = {0};
-                            if (sscanf(exp->valuestring, "%d-%d-%d", &tmv.tm_year, &tmv.tm_mon, &tmv.tm_mday) == 3) {
-                                tmv.tm_year -= 1900;
-                                tmv.tm_mon -= 1;
-                                item.calculated_expiry_date = mktime(&tmv);
-                                time_t now = time(NULL);
-                                item.default_shelf_life_days = (item.calculated_expiry_date - now) / (24 * 3600);
-                            }
-                        } else if (shelf && shelf->valueint > 0) {
+                        // Use shelf_life_days when provided
+                        if (shelf && cJSON_IsNumber(shelf) && shelf->valueint > 0) {
                             item.default_shelf_life_days = shelf->valueint;
+                        }
+
+                        // Handle expiry date parsing (YYYY-MM-DD) when it's a non-empty and valid string
+                        if (exp && cJSON_IsString(exp) && exp->valuestring && exp->valuestring[0] != '\0') {
+                            const char *exp_str = exp->valuestring;
+                            // Treat "未知" / "不详" / "unknown" 等为未知日期，交给下方 shelf_life_days 逻辑
+                            if (strcmp(exp_str, "未知") != 0 && strcmp(exp_str, "不详") != 0 &&
+                                strcasecmp(exp_str, "unknown") != 0 && strcasecmp(exp_str, "unk") != 0) {
+                                struct tm tmv = {0};
+                                if (sscanf(exp_str, "%d-%d-%d", &tmv.tm_year, &tmv.tm_mon, &tmv.tm_mday) == 3) {
+                                    tmv.tm_year -= 1900;
+                                    tmv.tm_mon -= 1;
+                                    item.calculated_expiry_date = mktime(&tmv);
+                                }
+                            }
+                        }
+
+                        // If expiry_date is missing or parsing failed but we have shelf_life_days,
+                        // derive a reasonable expiry date from shelf_life_days.
+                        if (item.calculated_expiry_date == 0 && item.default_shelf_life_days > 0) {
                             item.calculated_expiry_date = time(NULL) + (int64_t)item.default_shelf_life_days * 24 * 3600;
                         }
 
@@ -213,14 +228,17 @@ bool cloud_llm_parse_inventory(const char *text, llm_action_t action)
         strftime(date_str, sizeof(date_str), "%Y-%m-%d", &local_timeinfo);
     }
 
-    char system_prompt[512];
+    char system_prompt[2048];
     if (action == LLM_ACTION_REMOVE) {
-        snprintf(system_prompt, sizeof(system_prompt), 
-             "You are an inventory assistant. User wants to REMOVE items. Extract: name, quantity. Return ONLY JSON. Example: {\"name\":\"apple\",\"quantity\":2}");
+        snprintf(system_prompt, sizeof(system_prompt),
+            "你是一个冰箱库存管理助手。用户希望移除一些物品。请从用户语音中抽取: name(名称), quantity(数量)。只返回 JSON，不要包含其他文字。示例: {\"name\":\"苹果\",\"quantity\":2}");
     } else {
-        snprintf(system_prompt, sizeof(system_prompt), 
-             "You are an inventory assistant. Extract: name, category, quantity, unit, expiry_date (YYYY-MM-DD), shelf_life_days (int), location, notes. Today is %s. Return ONLY JSON. Example: {\"name\":\"milk\",\"quantity\":1,\"unit\":\"box\",\"expiry_date\":\"2025-12-01\",\"notes\":\"organic\"}", 
-             date_str);
+        snprintf(system_prompt, sizeof(system_prompt),
+            "你是一个冰箱库存管理助手。请从用户语音中抽取以下字段: name(名称), category(类别), quantity(数量), unit(单位), expiry_date(保质期, YYYY-MM-DD), shelf_life_days(保质期天数, int), location(推荐存放区域), notes(备注)。"
+            "今天是 %s。如果用户没有明确说出具体保质期天数, 需要你根据食材类型和常见保存习惯智能推荐一个合理的 shelf_life_days(>0), 例如: 牛奶/酸奶≈7天, 生肉≈2-3天, 冷冻食品≈30天, 常温零食≈30天。"
+            "location 字段如果用户没有明确说出存放位置, 需要你根据食材类型智能推荐, 例如: 牛奶/熟食/鸡蛋→冷藏区, 冷冻食品→冷冻室, 罐头/零食→常温储藏区。务必给出非空的 location 字符串。"
+            "只返回 JSON, 不要包含其他文字。示例: {\"name\":\"牛奶\",\"category\":\"乳制品\",\"quantity\":1,\"unit\":\"盒\",\"expiry_date\":\"2025-12-01\",\"shelf_life_days\":7,\"location\":\"冷藏区\",\"notes\":\"脱脂\"}",
+            date_str);
     }
 
     // Baidu uses "messages" array just like OpenAI

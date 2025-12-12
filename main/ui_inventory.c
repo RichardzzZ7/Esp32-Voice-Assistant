@@ -19,7 +19,6 @@ void ui_inventory_init(void)
 
 // UI state
 static lv_obj_t *inv_list = NULL;
-static lv_obj_t *label_page = NULL;
 static inventory_item_t **g_items = NULL;
 static int g_item_count = 0;
 static int g_page = 0;
@@ -60,28 +59,6 @@ void ui_inventory_show(void)
         lv_obj_align(inv_list, LV_ALIGN_TOP_MID, 0, 10);
     }
 
-    // page label
-    if (!label_page) {
-        label_page = lv_label_create(lv_scr_act());
-        lv_obj_align(label_page, LV_ALIGN_BOTTOM_MID, 0, -30);
-    }
-
-    // prev/next buttons
-    static lv_obj_t *btn_prev = NULL;
-    static lv_obj_t *btn_next = NULL;
-    if (!btn_prev) {
-        btn_prev = lv_btn_create(lv_scr_act()); lv_obj_set_size(btn_prev, 60, 40);
-        lv_obj_align(btn_prev, LV_ALIGN_BOTTOM_LEFT, 10, -10);
-        lv_obj_add_event_cb(btn_prev, btn_prev_cb, LV_EVENT_CLICKED, NULL);
-        lv_obj_t *lab = lv_label_create(btn_prev); lv_label_set_text_static(lab, "Prev"); lv_obj_center(lab);
-    }
-    if (!btn_next) {
-        btn_next = lv_btn_create(lv_scr_act()); lv_obj_set_size(btn_next, 60, 40);
-        lv_obj_align(btn_next, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
-        lv_obj_add_event_cb(btn_next, btn_next_cb, LV_EVENT_CLICKED, NULL);
-        lv_obj_t *lab2 = lv_label_create(btn_next); lv_label_set_text_static(lab2, "Next"); lv_obj_center(lab2);
-    }
-
     // compute pagination
     int total_pages = (g_item_count + g_page_size - 1) / g_page_size;
     if (total_pages == 0) total_pages = 1;
@@ -95,7 +72,14 @@ void ui_inventory_show(void)
     for (int i = start; i < end; ++i) {
         inventory_item_t *it = g_items[i];
         char buf[128];
-        snprintf(buf, sizeof(buf), "%s  %d%s  %s", it->name, it->remaining_days, "天", it->location);
+        // 显示: 名称  数量单位  剩余天数  存放位置
+        // 例如: 鸡蛋  1盒  5天  冷藏区
+        snprintf(buf, sizeof(buf), "%s  %d%s  %d天  %s",
+                 it->name,
+                 it->quantity,
+                 it->unit,
+                 it->remaining_days,
+                 it->location);
         lv_obj_t *label = lv_label_create(inv_list);
         lv_label_set_text(label, buf);
         lv_obj_set_style_text_font(label, &font_alipuhui20, LV_STATE_DEFAULT);
@@ -108,10 +92,6 @@ void ui_inventory_show(void)
         }
         y++;
     }
-
-    // update page label
-    char pbuf[32]; snprintf(pbuf, sizeof(pbuf), "%d / %d", g_page+1, total_pages);
-    lv_label_set_text(label_page, pbuf);
 
     lvgl_port_unlock();
 }

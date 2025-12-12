@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <stdio.h>
+#include <math.h>
 
 static const char *TAG = "inventory";
 static inventory_item_t *g_head = NULL;
@@ -63,16 +64,14 @@ int inventory_compute_expiry(inventory_item_t *item)
     }
 
     time_t now = time(NULL);
-    struct tm *expiry_tm = gmtime(&item->calculated_expiry_date);
-    struct tm *now_tm = gmtime(&now);
-    struct tm expiry_date = *expiry_tm;
-    struct tm now_date = *now_tm;
-    expiry_date.tm_hour = expiry_date.tm_min = expiry_date.tm_sec = 0;
-    now_date.tm_hour = now_date.tm_min = now_date.tm_sec = 0;
-
-    time_t expiry_time = mktime(&expiry_date);
-    time_t now_time = mktime(&now_date);
-    int days = (int)((expiry_time - now_time) / (24*3600));
+    double diff_sec = difftime(item->calculated_expiry_date, now);
+    int days;
+    if (diff_sec <= 0) {
+        days = 0;
+    } else {
+        // 向上取整到整天，比如剩余 2.1 天显示为 3 天
+        days = (int)ceil(diff_sec / (24.0 * 3600.0));
+    }
     if (days < 0) days = 0;
     if (days > MAX_SHELF_LIFE_DAYS) {
         days = MAX_SHELF_LIFE_DAYS;
@@ -102,7 +101,7 @@ int inventory_add_item(const inventory_item_t *item)
     inventory_compute_expiry(n);
     n->next = g_head;
     g_head = n;
-    ESP_LOGI(TAG, "Added item: %s qty:%d loc:%s remaining:%d", n->name, n->quantity, n->location, n->remaining_days);
+    ESP_LOGI(TAG, "Added item: %s qty:%d %s loc:%s remaining:%d", n->name, n->quantity, n->unit, n->location, n->remaining_days);
     inventory_save();
     // enqueue sync event
     cJSON *ev = cJSON_CreateObject();

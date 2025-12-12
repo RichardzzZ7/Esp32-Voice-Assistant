@@ -1,7 +1,6 @@
 // notify.c - periodic scan of inventory and TTS reminders
 #include "notify.h"
 #include "inventory.h"
-#include "tts.h"
 #include "ui_inventory.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -25,10 +24,8 @@ static void notify_task(void *arg)
                 if (!it) continue;
                 if (it->remaining_days <= g_threshold_days) {
                     if (it->last_notified_remaining_days != it->remaining_days) {
-                        char msg[256];
-                        snprintf(msg, sizeof(msg), "%s 将在 %d 天后过期", it->name, it->remaining_days);
-                        ESP_LOGI(TAG, "notify: %s", msg);
-                        tts_speak_text(msg, true);
+                        // 仅记录日志和刷新 UI，不再语音播报，避免 notify 任务栈溢出
+                        ESP_LOGI(TAG, "notify: %s 将在 %d 天后过期", it->name, it->remaining_days);
                         inventory_mark_notified(it, it->remaining_days);
                         ui_inventory_refresh();
                     }
