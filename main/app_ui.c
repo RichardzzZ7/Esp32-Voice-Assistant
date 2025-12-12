@@ -115,7 +115,10 @@ void mp3_player_init(void)
 {
     // 获取文件信息
     file_iterator = file_iterator_new(SPIFFS_BASE);
-    assert(file_iterator != NULL);
+    if (file_iterator == NULL) {
+        ESP_LOGE(TAG, "mp3_player_init: file_iterator_new failed, disable local MP3 playback");
+        return;
+    }
 
     // 初始化音频播放
     player_config.mute_fn = _audio_player_mute_fn;
@@ -316,7 +319,7 @@ void music_ui(void)
 
     lv_obj_t *label_prev = lv_label_create(btn_play_prev);
     lv_label_set_text_static(label_prev, LV_SYMBOL_PREV);
-    lv_obj_set_style_text_font(label_prev, &lv_font_montserrat_24, LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(label_prev, &font_alipuhui20, LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(label_prev, lv_color_make(0, 0, 0), LV_STATE_DEFAULT);
     lv_obj_center(label_prev);
     lv_obj_set_user_data(btn_play_prev, (void *) label_prev);
@@ -337,7 +340,7 @@ void music_ui(void)
 
     lv_obj_t *label_next = lv_label_create(btn_play_next);
     lv_label_set_text_static(label_next, LV_SYMBOL_NEXT);
-    lv_obj_set_style_text_font(label_next, &lv_font_montserrat_24, LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(label_next, &font_alipuhui20, LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(label_next, lv_color_make(0, 0, 0), LV_STATE_DEFAULT);
     lv_obj_center(label_next);
     lv_obj_set_user_data(btn_play_next, (void *) label_next);
@@ -354,12 +357,12 @@ void music_ui(void)
 
     lv_obj_t *lab_vol_min = lv_label_create(lv_scr_act());
     lv_label_set_text_static(lab_vol_min, LV_SYMBOL_VOLUME_MID);
-    lv_obj_set_style_text_font(lab_vol_min, &lv_font_montserrat_20, LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(lab_vol_min, &font_alipuhui20, LV_STATE_DEFAULT);
     lv_obj_align_to(lab_vol_min, volume_slider, LV_ALIGN_OUT_LEFT_MID, -10, 0);
 
     lv_obj_t *lab_vol_max = lv_label_create(lv_scr_act());
     lv_label_set_text_static(lab_vol_max, LV_SYMBOL_VOLUME_MAX);
-    lv_obj_set_style_text_font(lab_vol_max, &lv_font_montserrat_20, LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(lab_vol_max, &font_alipuhui20, LV_STATE_DEFAULT);
     lv_obj_align_to(lab_vol_max, volume_slider, LV_ALIGN_OUT_RIGHT_MID, 10, 0);
 
     /* 创建音乐标题 */

@@ -271,7 +271,7 @@ void app_hid_ctrl(void)
 
     label = lv_label_create(btn1);
     lv_label_set_text(label, LV_SYMBOL_VOLUME_MID);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(label, &font_alipuhui20, 0);
     lv_obj_center(label);
 
     lv_obj_t * btn2 = lv_btn_create(icon_in_obj);
@@ -281,7 +281,7 @@ void app_hid_ctrl(void)
 
     label = lv_label_create(btn2);
     lv_label_set_text(label, LV_SYMBOL_VOLUME_MAX);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(label, &font_alipuhui20, 0);
     lv_obj_center(label);
 
     lvgl_port_unlock();
