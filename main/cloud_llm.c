@@ -2,6 +2,7 @@
 // #include "cloud_asr.h" // No longer needed for LLM if using IAM Auth
 #include "recipe_config.h"
 #include "inventory.h"
+#include "ui_inventory.h"
 #include "esp_log.h"
 #include "esp_http_client.h"
 #include "esp_crt_bundle.h"
@@ -355,8 +356,15 @@ bool cloud_llm_recommend_recipes(void)
 
     cJSON *root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "model", "ernie-speed-128k");
-    
-    char system_prompt[] = "You are a professional chef. Based on the provided inventory ingredients, recommend 1-2 detailed recipes. Format the output clearly.";
+
+    // 提示词：用简体中文，中餐优先，推荐 3 道常见家常菜，突出食材和主要步骤，控制在约 350 字以内
+    const char *system_prompt =
+        "你是一个专业中文厨师助手，请根据提供的冰箱库存，优先推荐中国人日常三餐常吃的中餐家常菜"
+        "（如炒菜、炖菜、煲汤、主食等），避免奇怪或少见的搭配。"
+        "请只输出纯文本，最多推荐 3 道菜，不要任何前后解释，也不要 Markdown。"
+        "每道菜单独一行，格式类似："
+        "1. 菜名 - 食材：食材1, 食材2, 食材3；步骤：用一两句话概括主要烹饪方法，语言自然口语化。"
+        "整体字数尽量控制在 350 字以内，不需要详细到精确克数或时间。";
     
     cJSON *messages = cJSON_CreateArray();
     char *combined_content = malloc(strlen(system_prompt) + strlen(inv_str) + 50);
@@ -385,14 +393,14 @@ bool cloud_llm_recommend_recipes(void)
                 int read_len = esp_http_client_read_response(client, buffer, 8192);
                 if (read_len >= 0) {
                     buffer[read_len] = 0;
-                    // ESP_LOGI(TAG, "Recipe Response: %s", buffer);
-                    
-                    // Parse and print content
+                    // Parse and print content，同时在 UI 上显示简要菜谱
                     cJSON *resp = cJSON_Parse(buffer);
                     if (resp) {
+                        char *recipe_text = NULL;
+
                         cJSON *result = cJSON_GetObjectItem(resp, "result");
-                        if (result && result->valuestring) {
-                             printf("\n=== Recipe Recommendation ===\n%s\n=============================\n", result->valuestring);
+                        if (result && cJSON_IsString(result) && result->valuestring) {
+                            recipe_text = strdup(result->valuestring);
                         } else {
                             // Try OpenAI format
                             cJSON *choices = cJSON_GetObjectItem(resp, "choices");
@@ -400,11 +408,28 @@ bool cloud_llm_recommend_recipes(void)
                                 cJSON *first = cJSON_GetArrayItem(choices, 0);
                                 cJSON *msg = cJSON_GetObjectItem(first, "message");
                                 cJSON *content = cJSON_GetObjectItem(msg, "content");
-                                if (content && content->valuestring) {
-                                    printf("\n=== Recipe Recommendation ===\n%s\n=============================\n", content->valuestring);
+                                if (content && cJSON_IsString(content) && content->valuestring) {
+                                    recipe_text = strdup(content->valuestring);
                                 }
                             }
                         }
+
+                        if (recipe_text) {
+                            // 为安全起见，截断到适中的长度，避免 UI 过长
+                            char short_buf[512];
+                            size_t len = strlen(recipe_text);
+                            if (len >= sizeof(short_buf)) {
+                                len = sizeof(short_buf) - 1;
+                            }
+                            memcpy(short_buf, recipe_text, len);
+                            short_buf[len] = '\0';
+
+                            printf("\n=== Recipe Recommendation ===\n%s\n=============================\n", short_buf);
+                            ui_recipe_show_text(short_buf);
+
+                            free(recipe_text);
+                        }
+
                         cJSON_Delete(resp);
                     }
                     success = true;

@@ -109,6 +109,7 @@ void detect_Task(void *arg)
     esp_mn_commands_add(4, "xian shi ku cun"); // 显示库存
     esp_mn_commands_add(5, "qing kong"); // 清空
     esp_mn_commands_add(6, "cai pu tui jian"); // 菜谱推荐
+    esp_mn_commands_add(7, "fan hui"); // 返回
     esp_mn_commands_update(); // 更新命令词
     int mu_chunksize = multinet->get_samp_chunksize(model_data);  // 获取samp帧长度
     assert(mu_chunksize == afe_chunksize);
@@ -249,6 +250,17 @@ void detect_Task(void *arg)
                         // Run recipe recommendation in background to avoid blocking
                         // the AFE/multinet detection loop and causing rb_out slow.
                         xTaskCreatePinnedToCore(llm_recipe_task, "llm_recipe", 8*1024, NULL, 5, NULL, 1);
+                        // Reset state to idle
+                        afe_handle->enable_wakenet(afe_data);
+                        detect_flag = 0;
+                        ai_gui_out();
+                        printf("\n-----------awaits to be waken up-----------\n");
+                        continue;
+
+                    case 7: // fan hui
+                        printf("Return to home screen...\n");
+                        // 回到初始界面：当前设计为库存列表
+                        ui_inventory_refresh();
                         // Reset state to idle
                         afe_handle->enable_wakenet(afe_data);
                         detect_flag = 0;

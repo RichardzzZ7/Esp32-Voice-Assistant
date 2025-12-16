@@ -21,8 +21,7 @@ void ui_inventory_init(void)
 static lv_obj_t *inv_list = NULL;
 static inventory_item_t **g_items = NULL;
 static int g_item_count = 0;
-static int g_page = 0;
-static int g_page_size = 6;
+// 之前示例中有分页逻辑，这里改为单页显示全部条目
 static int g_notify_threshold_days = 3; // highlight threshold
 
 static void btn_prev_cb(lv_event_t *e)
@@ -42,7 +41,6 @@ void ui_inventory_refresh(void)
     int count = inventory_list_items(&g_items);
     if (count < 0) { ESP_LOGW(TAG, "failed to get items"); return; }
     g_item_count = count;
-    g_page = 0;
     // update display
     ui_inventory_show();
 }
@@ -59,13 +57,9 @@ void ui_inventory_show(void)
         lv_obj_align(inv_list, LV_ALIGN_TOP_MID, 0, 10);
     }
 
-    // compute pagination
-    int total_pages = (g_item_count + g_page_size - 1) / g_page_size;
-    if (total_pages == 0) total_pages = 1;
-    if (g_page >= total_pages) g_page = total_pages - 1;
-
-    int start = g_page * g_page_size;
-    int end = start + g_page_size; if (end > g_item_count) end = g_item_count;
+    // 不再做分页，直接显示所有条目
+    int start = 0;
+    int end = g_item_count;
 
     // create entries vertically
     int y = 0;
@@ -96,13 +90,42 @@ void ui_inventory_show(void)
     lvgl_port_unlock();
 }
 
+// 在同一个容器上显示菜谱简要信息
+// text 为多行简短字符串（例如两道菜，每道一行或两行）
+void ui_recipe_show_text(const char *text)
+{
+    if (!text) {
+        text = "";
+    }
+
+    lvgl_port_lock(0);
+    // 复用库存列表的容器
+    if (inv_list) {
+        lv_obj_clean(inv_list);
+    } else {
+        inv_list = lv_obj_create(lv_scr_act());
+        lv_obj_set_size(inv_list, 320, 200);
+        lv_obj_align(inv_list, LV_ALIGN_TOP_MID, 0, 10);
+    }
+
+    lv_obj_t *label = lv_label_create(inv_list);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(label, 300);
+    lv_label_set_text(label, text);
+    lv_obj_set_style_text_font(label, &font_alipuhui20, LV_STATE_DEFAULT);
+    lv_obj_align(label, LV_ALIGN_TOP_LEFT, 10, 10);
+
+    lvgl_port_unlock();
+}
+
 void ui_inventory_next_page(void)
 {
-    int total_pages = (g_item_count + g_page_size - 1) / g_page_size;
-    if (g_page + 1 < total_pages) { g_page++; ui_inventory_show(); }
+    // 取消分页后，该函数保留为空实现，避免旧代码调用崩溃
+    (void)g_items;
 }
 
 void ui_inventory_prev_page(void)
 {
-    if (g_page > 0) { g_page--; ui_inventory_show(); }
+    // 取消分页后，该函数保留为空实现，避免旧代码调用崩溃
+    (void)g_items;
 }
