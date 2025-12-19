@@ -61,6 +61,12 @@ void process_audio_task(void *arg) {
                  ESP_LOGI(TAG, "ASR: %s", text);
                  cloud_llm_parse_inventory(text, g_current_action);
                  ui_inventory_refresh();
+                 // 根据当前动作播放对应提示音
+                 if (g_current_action == LLM_ACTION_ADD) {
+                     ui_play_prompt_add();
+                 } else if (g_current_action == LLM_ACTION_REMOVE) {
+                     ui_play_prompt_remove();
+                 }
                  free(text);
              }
              free(g_record_buffer);
@@ -228,6 +234,7 @@ void detect_Task(void *arg)
                         printf("Showing Inventory...\n");
                         inventory_print_all();
                         ui_inventory_refresh();
+                        ui_play_prompt_show();
                         // Reset state to idle
                         afe_handle->enable_wakenet(afe_data);
                         detect_flag = 0;

@@ -19,6 +19,21 @@ lv_obj_t *label_play_pause;
 lv_obj_t *btn_play_pause;
 lv_obj_t *volume_slider;
 
+// 简单提示音频播放：从 SPIFFS 播放固定文件
+static void play_prompt_file(const char *filename)
+{
+    if (!filename) return;
+    char path[128];
+    snprintf(path, sizeof(path), "/spiffs/%s", filename);
+    FILE *fp = fopen(path, "rb");
+    if (!fp) {
+        ESP_LOGW(TAG, "prompt file not found: %s", path);
+        return;
+    }
+    ESP_LOGI(TAG, "Playing prompt: %s", path);
+    audio_player_play(fp);
+}
+
 // 播放指定序号的音乐
 static void play_index(int index)
 {
@@ -84,17 +99,20 @@ static void _audio_player_callback(audio_player_cb_ctx_t *ctx)
     switch (ctx->audio_event) {
     case AUDIO_PLAYER_CALLBACK_EVENT_IDLE: {  // 播放完一首歌 进入这个case
         ESP_LOGI(TAG, "AUDIO_PLAYER_REQUEST_IDLE");
-        // 指向下一首歌
-        file_iterator_next(file_iterator);
-        int index = file_iterator_get_index(file_iterator);
-        ESP_LOGI(TAG, "playing index '%d'", index);
-        play_index(index);
-        // 修改当前播放的音乐名称
-        lvgl_port_lock(0);
-        lv_dropdown_set_selected(music_list, index);
-        lv_obj_t *label_title = (lv_obj_t *) music_list->user_data;
-        lv_label_set_text_static(label_title, file_iterator_get_name_from_index(file_iterator, index));
-        lvgl_port_unlock();
+        // 如果当前没有初始化音乐列表 UI 或文件迭代器，说明只是播放了一次提示音，忽略“自动下一首”逻辑
+        if (file_iterator && music_list) {
+            // 指向下一首歌
+            file_iterator_next(file_iterator);
+            int index = file_iterator_get_index(file_iterator);
+            ESP_LOGI(TAG, "playing index '%d'", index);
+            play_index(index);
+            // 修改当前播放的音乐名称
+            lvgl_port_lock(0);
+            lv_dropdown_set_selected(music_list, index);
+            lv_obj_t *label_title = (lv_obj_t *) music_list->user_data;
+            lv_label_set_text_static(label_title, file_iterator_get_name_from_index(file_iterator, index));
+            lvgl_port_unlock();
+        }
         break;
     }
     case AUDIO_PLAYER_CALLBACK_EVENT_PLAYING: // 正在播放音乐
@@ -531,4 +549,20 @@ void ai_volume_down(void)
         lvgl_port_unlock();
     }
     ESP_LOGI(TAG, "volume '%d'", g_sys_volume);
+}
+
+// 对外提供的三个固定提示音播放接口
+void ui_play_prompt_add(void)
+{
+    play_prompt_file("prompt_add.wav");
+}
+
+void ui_play_prompt_remove(void)
+{
+    play_prompt_file("prompt_remove.wav");
+}
+
+void ui_play_prompt_show(void)
+{
+    play_prompt_file("prompt_show.wav");
 }

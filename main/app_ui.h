@@ -15,5 +15,11 @@ void ai_next_music(void);
 void ai_volume_up(void);
 void ai_volume_down(void);
 
+// 在 SPIFFS 中播放预先生成的提示音频文件
+// 例如 /spiffs/prompt_add.wav, /spiffs/prompt_remove.wav, /spiffs/prompt_show.wav
+void ui_play_prompt_add(void);
+void ui_play_prompt_remove(void);
+void ui_play_prompt_show(void);
+
 
 
