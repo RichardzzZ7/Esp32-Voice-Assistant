@@ -7,12 +7,15 @@
 - 语音命令控制（离线唤醒 + 命令词）
   - 唤醒词：沿用乐鑫示例的中文唤醒词（WakeNet），无需联网即可唤醒。
   - 主要命令词（MultiNet）：
-    - “测试云端”/`ce shi yun duan`：测试云 ASR + 云 LLM 流程。
+    - “测试云端”/`ce shi yun duan`：仅做云 ASR 录音与识别调试（保留但不作为主流程）。
     - “放入”/`fang ru`：录音并上传到云 ASR+LLM，解析为“新增库存”。
     - “拿出”/`na chu`：录音并上传到云 ASR+LLM，解析为“减库存/取出物品”。
     - “显示库存”/`xian shi ku cun`：打开库存列表 UI。
     - “清空”/`qing kong`：清空所有库存。
     - “菜谱推荐”/`cai pu tui jian`：基于当前库存向云端 LLM 请求菜谱推荐。
+    - “返回”/`fan hui`：从菜谱推荐界面返回库存列表界面。
+    - “声音大一点”/`sheng yin da yi dian`：增大音量。
+    - “声音小一点”/`sheng yin xiao yi dian`：减小音量。
 
 - 云 ASR + 云 LLM 解析库存
   - 音频通过云 ASR 转为文本后，由百度千帆 ERNIE-Speed-128k 模型解析成结构化 JSON：
@@ -30,7 +33,7 @@
   - 库存数据结构：见 `inventory.h` 中的 `inventory_item_t`，包含名称、类别、数量、单位、位置、添加时间、保质期、剩余天数等。
   - 本地持久化：使用 SPIFFS，将库存保存为 `/spiffs/inventory.json`（JSON 数组）。
   - 保质期与剩余天数逻辑：
-    - 优先使用大模型给出的 `shelf_life_days`，上限为 365 天；
+    - 优先使用大模型给出的 `shelf_life_days`；
     - 若未给出，则按类别映射默认天数（牛奶≈7 天，肉/鸡/鱼≈3 天，蔬果≈5 天，冷冻≈30 天等）；
     - 若给出有效 `expiry_date`，则以此反推或直接计算剩余天数；
     - 用 `difftime` + 向上取整的方式计算剩余天数：
@@ -46,26 +49,30 @@
   - 剩余天数小于等于阈值（默认 3 天）时，该条目在 UI 中以红色高亮。
   - 当前 UI 只保留一页列表展示，不再显示“上一页/下一页”按钮和页码。
 
+- 操作提示音（SPIFFS 本地 WAV）
+  - “放入/拿出/显示库存”命令完成后，会播放对应的提示音文件：
+    - `/spiffs/prompt_add.wav`
+    - `/spiffs/prompt_remove.wav`
+    - `/spiffs/prompt_show.wav`
+  - 提示音通过 `audio_player` 从 SPIFFS 直接播放；建议使用 16kHz / 16-bit / mono 的 WAV 以保证兼容与资源占用可控。
+
 - 通知与提醒（轻量日志 + UI 刷新）
   - `notify` 任务会按固定间隔（默认 12 小时）扫描库存：
     - 对剩余天数 <= 阈值、且上次提醒天数不同的物品，在串口打印日志；
     - 更新 `last_notified_remaining_days` 并刷新 UI 列表。
-  - 为避免栈溢出和过多云请求，目前 **不再在通知任务中播放 TTS 语音**，仅做日志和 UI 提示。
+  - 为避免栈溢出和过多云请求，目前 **不再在通知任务中播放 TTS 语音**，仅做日志和 UI 提示并播放本地音频。
 
 - 云端菜谱推荐
   - 通过语音命令“菜谱推荐”触发，由 `cloud_llm_recommend_recipes` 汇总当前库存（名称 + 数量 + 单位），构造提示词并调用百度千帆 ERNIE-Speed-128k：
-    - 返回 1~2 个详细菜谱建议；
+    - 返回 2~3 个详细菜谱建议；
     - 在串口终端中打印完整菜谱文本，便于在开发阶段调试和查看。
-  - `recipe.c` 中预留了基于库存请求菜谱推荐的骨架逻辑，可对接其它接口或在需要时配合 TTS 播报摘要。
+    - 在ui上打印文本。
+  - `recipe.c` 中预留了基于库存请求菜谱推荐的骨架逻辑，可对接其它接口或在需要时配合 TTS 播报摘要。（项目初期尝试，后弃用）
 
-- TTS 层（可选）
-  - `tts.c` 提供一个统一的 `tts_speak_text` 接口：
-    - 优先尝试云 TTS（如科大讯飞 REST API），并将合成的 WAV 缓存在 `/spiffs/tts_cache`；
-    - 若云 TTS 不可用，则生成简单 beep 提示音作为回退；
-    - 通过 `audio_player` 播放。
-  - 目前默认不在“临期提醒”任务中使用 TTS，仅在需要时（例如菜谱摘要）调用，避免占用过多栈和网络资源。
+- TTS 层（可选扩展）
+  - 当前项目主要使用“SPIFFS 预置提示音 WAV”作为交互反馈；`tts.c` / `tts_config.h` 保留为可选扩展（可自行接入云 TTS 并缓存到 SPIFFS）。
 
-- 离线事件队列与云同步（可选）
+- 离线事件队列与云同步（可选扩展，暂未实现）
   - `sync.*` 模块将新增/删除/提醒等操作封装为事件写入本地队列；
   - 可选对接后台 HTTP 接口 `SYNC_API_URL`，在网络可用时批量上报，构建云端“冰箱资产”视图。
 
@@ -95,6 +102,10 @@
     - 请将示例中的占位 Token 替换成你自己在百度千帆控制台申请的 Token；
     - 接口地址：`https://qianfan.baidubce.com/v2/chat/completions`。
 
+- 百度云 ASR（语音转文字）
+  - 配置位置：`main/cloud_asr.c`
+  - 需要填写 `BAIDU_ASR_API_KEY` / `BAIDU_ASR_SECRET_KEY`，并确保设备可访问外网。
+
 - 云 TTS（可选：科大讯飞）
   - 配置位置：`main/tts_config.h`
   - 需要配置：`APIKey`、`APISecret`、`APPID`，以及可选的 `XFYUN_ROOT_CA` PEM 证书（若启用证书钉扎）。
@@ -107,39 +118,6 @@
   - 配置位置：`main/sync_config.h`
   - 将 `SYNC_API_URL` 替换为你自己的后端服务地址即可启用事件上报。
 
-## 编译与烧录（Windows PowerShell）
-
-1. 打开 ESP-IDF PowerShell 环境（以 ESP-IDF v5.1.6 为例）：
-
-```powershell
-cd e:\hw\esp\xiaobin
-```
-
-2. 根据需要运行 `menuconfig`（可选）：
-
-```powershell
-idf.py menuconfig
-```
-
-确保启用了以下组件/选项：
-
-- `SPIFFS` 文件系统
-- `ESP HTTP client`（`esp_http_client`）
-- `mbedtls` / `ESP-TLS`（用于 HTTPS 和云端通信）
-- LVGL 显示驱动与字体（已在 CMakeLists 中启用 `LV_FONT_FMT_TXT_LARGE=1`）
-
-3. 构建固件：
-
-```powershell
-idf.py build
-```
-
-4. 烧录并打开串口监视（将 `COM4` 换成你实际的端口）：
-
-```powershell
-idf.py -p COM4 flash monitor
-```
-
 ## 使用示例
 
 - 启动与初始化
@@ -147,11 +125,11 @@ idf.py -p COM4 flash monitor
   - 串口会打印诸如 `inventory: Added item ...`、`cloud_llm: HTTP Response ...` 等日志。
 
 - 语音添加食材
-  - 唤醒后说：“放入一盒鸡蛋，放冷藏，保质期大概一周。”
+  - 唤醒后说：“放入一盒鸡蛋，放冷藏，保质期一周。”
   - 设备：
     - 录音 -> 云 ASR -> 文本 -> 千帆 LLM 解析；
-    - 生成 JSON：`{"name":"鸡蛋","quantity":1,"unit":"盒","location":"冷藏区","shelf_life_days":5,...}`；
-    - 写入库存并在 UI 中出现类似：`鸡蛋  1盒  5天  冷藏区`。
+    - 生成 JSON：`{"name":"鸡蛋","quantity":1,"unit":"盒","location":"冷藏区","shelf_life_days":7,...}`；
+    - 写入库存并在 UI 中出现：`鸡蛋  1盒  7天  冷藏区`。
 
 - 语音取出食材
   - 唤醒后说：“拿出两瓶牛奶。”
@@ -160,11 +138,17 @@ idf.py -p COM4 flash monitor
 - 查看库存
   - 唤醒后说：“显示库存。”
   - 屏幕显示按剩余天数排序的列表，即将过期的物品在最上面，并用红色高亮。
+  - 同时播放提示音：`/spiffs/prompt_show.wav`。
 
 - 菜谱推荐
   - 唤醒后说：“菜谱推荐。”
   - 设备会根据当前所有库存生成描述，调用千帆 LLM 获取 1~2 个菜谱；
   - 完整菜谱文本会打印在串口终端，便于查看与调试。
+  - 再次唤醒后说：“返回。”
+  - 设备会将菜谱推荐ui退回至库存显示ui。
+
+- 音量调整
+  - 唤醒后说：“声音大一点”或“声音小一点”，即可调整系统音量。
 
 ## 调试与注意事项
 
@@ -176,9 +160,32 @@ idf.py -p COM4 flash monitor
   - 云 ASR 与千帆 LLM 均依赖外网连接，请确保 Wi-Fi 配置正确；
   - 若网络异常，云解析失败时不会添加条目，可通过日志定位问题。
 
+- TLS 连接失败（`mbedtls_ssl_setup returned -0x7F00`）
+  - 该问题通常与“内部 RAM 紧张”有关（TLS 握手阶段对内部内存更敏感）。
+  - 项目已对 LLM 调用路径做过内存优化（减小 `esp_http_client` buffer，并将部分大临时缓冲迁移到 PSRAM）；若仍偶发，请优先检查：
+    - 是否同时开启了过多耗内存功能；
+    - SPI RAM 是否正常启用；
+    - 日志里出错前 `free heap` 是否过低。
+
 - 栈与任务
   - 所有耗时的 HTTP/LLM 请求（ASR、千帆 LLM、菜谱推荐）均在独立任务中执行，避免阻塞语音前端（AFE）；
   - 通知任务目前仅做轻量操作（日志 + UI），不启用云 TTS，以避免栈溢出问题。
+
+## 构建与烧录
+
+- SPIFFS 文件
+  - 本项目会将 [spiffs/](spiffs/) 目录打包进名为 `storage` 的 SPIFFS 分区（见 [main/CMakeLists.txt](main/CMakeLists.txt) 与 [partitions.csv](partitions.csv)）。
+  - 提示音文件位于 [spiffs/](spiffs/)：`prompt_add.wav` / `prompt_remove.wav` / `prompt_show.wav`。
+
+- 烧录、构建与监视
+  - ESP-IDF扩展自带的工具栏工具
+
+## Tips
+
+- 01
+  - 本项目基于官方给定的标准例程进行修改编写，保留了一些无用的函数，非必要不建议删除，可能引发空指针等未知bug。
+- 02
+  - 由于硬件限制，语音识别可能存在识别出错、识别缺漏等问题。
 
 ## 后续可扩展方向
 
