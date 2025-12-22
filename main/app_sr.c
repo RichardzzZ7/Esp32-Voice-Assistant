@@ -116,6 +116,8 @@ void detect_Task(void *arg)
     esp_mn_commands_add(5, "qing kong"); // 清空
     esp_mn_commands_add(6, "cai pu tui jian"); // 菜谱推荐
     esp_mn_commands_add(7, "fan hui"); // 返回
+    esp_mn_commands_add(8, "sheng yin da yi dian");   // 声音大一点
+    esp_mn_commands_add(9, "sheng yin xiao yi dian"); // 声音小一点
     esp_mn_commands_update(); // 更新命令词
     int mu_chunksize = multinet->get_samp_chunksize(model_data);  // 获取samp帧长度
     assert(mu_chunksize == afe_chunksize);
@@ -274,6 +276,16 @@ void detect_Task(void *arg)
                         ai_gui_out();
                         printf("\n-----------awaits to be waken up-----------\n");
                         continue;
+
+                    case 8: // sheng yin da yi dian
+                        printf("Volume up...\\n");
+                        ai_volume_up();
+                        break;
+
+                    case 9: // sheng yin xiao yi dian
+                        printf("Volume down...\\n");
+                        ai_volume_down();
+                        break;
 
                     default:
                         break;

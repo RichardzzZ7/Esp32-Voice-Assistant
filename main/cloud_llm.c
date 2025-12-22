@@ -9,6 +9,7 @@
 #include "cJSON.h"
 #include <string.h>
 #include <time.h>
+#include "esp_heap_caps.h"
 #include "mbedtls/md.h"
 #include "mbedtls/sha256.h"
 
@@ -200,8 +201,9 @@ bool cloud_llm_parse_inventory(const char *text, llm_action_t action)
         .url = url,
         .method = HTTP_METHOD_POST,
         .timeout_ms = 30000,
-        .buffer_size = 4096,
-        .buffer_size_tx = 2048,
+        // 减小 HTTP buffer 占用的内部内存，降低 TLS 内存压力
+        .buffer_size = 2048,
+        .buffer_size_tx = 1024,
         .crt_bundle_attach = esp_crt_bundle_attach,
     };
     
@@ -247,7 +249,8 @@ bool cloud_llm_parse_inventory(const char *text, llm_action_t action)
     
     // Combine system prompt and user text into a single user message to ensure it is respected
     // Some Baidu models/endpoints ignore the 'system' field or separate system messages.
-    char *combined_content = malloc(strlen(system_prompt) + strlen(text) + 50);
+    char *combined_content = heap_caps_malloc(strlen(system_prompt) + strlen(text) + 50,
+                                              MALLOC_CAP_SPIRAM);
     if (combined_content) {
         sprintf(combined_content, "%s\n\nUser Input: %s", system_prompt, text);
         
@@ -284,7 +287,7 @@ bool cloud_llm_parse_inventory(const char *text, llm_action_t action)
             ESP_LOGE(TAG, "HTTP client fetch headers failed");
         } else {
             int read_len;
-            char *buffer = malloc(4096); // Allocate 4KB buffer
+            char *buffer = heap_caps_malloc(4096, MALLOC_CAP_SPIRAM); // Allocate 4KB buffer in PSRAM
             if (buffer) {
                 read_len = esp_http_client_read_response(client, buffer, 4096);
                 if (read_len >= 0) {
@@ -322,7 +325,7 @@ bool cloud_llm_recommend_recipes(void)
     }
 
     // 2. Build Inventory String
-    char *inv_str = malloc(2048);
+    char *inv_str = heap_caps_malloc(2048, MALLOC_CAP_SPIRAM);
     if (!inv_str) {
         inventory_free_list(items);
         return false;
@@ -343,8 +346,9 @@ bool cloud_llm_recommend_recipes(void)
         .url = url,
         .method = HTTP_METHOD_POST,
         .timeout_ms = 60000, // Longer timeout for recipe generation
-        .buffer_size = 8192,
-        .buffer_size_tx = 4096,
+        // 略微减小 buffer，避免占用过多内部内存
+        .buffer_size = 4096,
+        .buffer_size_tx = 2048,
         .crt_bundle_attach = esp_crt_bundle_attach,
     };
     
@@ -367,7 +371,8 @@ bool cloud_llm_recommend_recipes(void)
         "整体字数尽量控制在 350 字以内，不需要详细到精确克数或时间。";
     
     cJSON *messages = cJSON_CreateArray();
-    char *combined_content = malloc(strlen(system_prompt) + strlen(inv_str) + 50);
+    char *combined_content = heap_caps_malloc(strlen(system_prompt) + strlen(inv_str) + 50,
+                                              MALLOC_CAP_SPIRAM);
     if (combined_content) {
         sprintf(combined_content, "%s\n\n%s", system_prompt, inv_str);
         cJSON *msg_user = cJSON_CreateObject();
@@ -388,7 +393,7 @@ bool cloud_llm_recommend_recipes(void)
     if (err == ESP_OK) {
         esp_http_client_write(client, post_data, strlen(post_data));
         if (esp_http_client_fetch_headers(client) >= 0) {
-            char *buffer = malloc(8192); // Larger buffer for recipe
+            char *buffer = heap_caps_malloc(8192, MALLOC_CAP_SPIRAM); // Larger buffer for recipe in PSRAM
             if (buffer) {
                 int read_len = esp_http_client_read_response(client, buffer, 8192);
                 if (read_len >= 0) {

@@ -527,9 +527,12 @@ void ai_volume_up(void)
             g_sys_volume = 100;
         }
         bsp_codec_volume_set(g_sys_volume, NULL); // 设置声音大小
-        lvgl_port_lock(0);
-        lv_slider_set_value(volume_slider, g_sys_volume, LV_ANIM_ON); // 设置slider
-        lvgl_port_unlock();
+        // 若当前未创建音量滑块 UI，则仅调整实际音量，不更新 LVGL 控件
+        if (volume_slider) {
+            lvgl_port_lock(0);
+            lv_slider_set_value(volume_slider, g_sys_volume, LV_ANIM_ON); // 设置slider
+            lvgl_port_unlock();
+        }
     }
     ESP_LOGI(TAG, "volume '%d'", g_sys_volume);
 }
@@ -544,9 +547,11 @@ void ai_volume_down(void)
             g_sys_volume = g_sys_volume - 5;
         }
         bsp_codec_volume_set(g_sys_volume, NULL); // 设置声音大小
-        lvgl_port_lock(0);
-        lv_slider_set_value(volume_slider, g_sys_volume, LV_ANIM_ON); // 设置slider
-        lvgl_port_unlock();
+        if (volume_slider) {
+            lvgl_port_lock(0);
+            lv_slider_set_value(volume_slider, g_sys_volume, LV_ANIM_ON); // 设置slider
+            lvgl_port_unlock();
+        }
     }
     ESP_LOGI(TAG, "volume '%d'", g_sys_volume);
 }
